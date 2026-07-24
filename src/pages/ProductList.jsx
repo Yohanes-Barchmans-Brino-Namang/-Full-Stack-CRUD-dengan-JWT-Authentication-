@@ -1,38 +1,84 @@
 import { useState, useEffect, useCallback } from "react";
 import api from "../api/axiosInstance";
+import Modal from "../components/Modal";
+import ProductForm from "../components/ProductForm";
+import ProductCard from "../components/ProductCard";
+
 function ProductList() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
-  // Fetch data dari API menggunakan useCallback untuk stabilitas fungsi
+  // State untuk modal
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  // Fetch data dari API
   const fetchProducts = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      // GET request ke NestJS API
       const response = await api.get("/api/v1/products");
-      console.log("Data products:", response.data);
       setProducts(response.data);
     } catch (err) {
       console.error("Error fetching products:", err);
       setError(err.response?.data?.message || "Gagal mengambil data produk");
-      setProducts([]);
     } finally {
       setLoading(false);
     }
   }, []);
-  // Fetch data saat komponen mount
   useEffect(() => {
     fetchProducts();
   }, [fetchProducts]);
-  // Filter products berdasarkan search
-  const filteredProducts = Array.isArray(products) 
-  ? products.filter(product => 
-      product.name?.toLowerCase().includes(searchTerm.toLowerCase())
-    ) 
-  : [];
-  // Conditional Rendering - Loading State
+  // Handle tambah produk baru
+  const handleAddProduct = () => {
+    setEditingProduct(null);
+    setModalOpen(true);
+  };
+  // Handle edit produk
+  const handleEditProduct = (product) => {
+    setEditingProduct(product);
+    setModalOpen(true);
+  };
+  // Handle hapus produk
+  const handleDeleteProduct = async (id) => {
+    if (!window.confirm("Yakin ingin menghapus produk ini?")) return;
+    try {
+      setIsSubmitting(true);
+      await api.delete(`/api/v1/products/${id}`);
+      alert("✅ Produk berhasil dihapus!");
+      await fetchProducts(); // Refetch data
+    } catch (err) {
+      console.error("Error deleting product:", err);
+      alert("❌ Gagal menghapus produk");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+  // Handle sukses submit (tambah/edit)
+  const handleFormSuccess = async () => {
+    setModalOpen(false);
+    setEditingProduct(null);
+    await fetchProducts(); // Refetch data
+  };
+  // Handle close modal
+  const handleCloseModal = () => {
+    if (isSubmitting) return;
+    setModalOpen(false);
+    setEditingProduct(null);
+  };
+  /* Filter produk berdasarkan search
+  const filteredProducts = products.filter((product) =>
+    product.name.toLowerCase().includes(searchTerm.toLowerCase()),
+  );*/
+  const filteredProducts = products.filter((product) => {
+  const keyword = searchTerm.toLowerCase();
+  const matchName = product.name?.toLowerCase().includes(keyword);
+  const matchDesc = product.description?.toLowerCase().includes(keyword);
+
+  return matchName || matchDesc;
+});
+  // Loading State
   if (loading) {
     return (
       <div style={styles.loadingContainer}>
@@ -41,7 +87,7 @@ function ProductList() {
       </div>
     );
   }
-  // Conditional Rendering - Error State
+  // Error State
   if (error) {
     return (
       <div style={styles.errorContainer}>
@@ -53,47 +99,72 @@ function ProductList() {
       </div>
     );
   }
-  // Conditional Rendering - Success State
+  // Success State
   return (
     <div style={styles.container}>
-      <h1>📦 Daftar Produk</h1>
-      <p>Total produk: {products.length}</p>
-      {/* Search Input */}
-      <input
-        type="text"
-        placeholder="🔍 Cari produk..."
-        value={searchTerm}
-        onChange={(e) => setSearchTerm(e.target.value)}
-        style={styles.searchInput}
-      />
-      {/* Refresh Button */}
-      <button onClick={fetchProducts} style={styles.refreshButton}>
-        � � Refresh
-      </button>
+      <div style={styles.headerSection}>
+        <div>
+          <h1>📦 Daftar Produk</h1>
+          <p style={styles.totalProducts}>Total produk: {products.length}</p>
+        </div>
+        <button onClick={handleAddProduct} style={styles.addButton}>
+          ➕ Tambah Produk
+        </button>
+      </div>
+      {/* Search & Refresh */}
+      <div style={styles.toolbar}>
+        <input
+          type="text"
+          placeholder="🔍 Cari produk..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          style={styles.searchInput}
+        />
+        <button onClick={fetchProducts} style={styles.refreshButton}>
+          � � Refresh
+        </button>
+      </div>
       {/* Product Grid */}
       {filteredProducts.length === 0 ? (
-        <p style={styles.noResults}>
-          Tidak ada produk yang cocok dengan pencarian.
-        </p>
+        <div style={styles.emptyState}>
+          {searchTerm ? (
+            <p>Tidak ada produk yang cocok dengan pencarian "{searchTerm}"</p>
+          ) : (
+            <div>
+              <p style={styles.emptyIcon}>📭</p>
+              <p>Belum ada produk. Klik "Tambah Produk" untuk menambahkan!</p>
+            </div>
+          )}
+        </div>
       ) : (
         <div style={styles.grid}>
           {filteredProducts.map((product) => (
-            <div key={product.id} style={styles.card}>
-              <h3>{product.name}</h3>
-              <p style={styles.price}>
-                💰 Rp {Number(product.price).toLocaleString()}
-              </p>
-              <p>{product.description}</p>
-              <p style={styles.category}>📁 {product.category}</p>
-              <div style={styles.stockBadge}>
-                {product.stock > 0 ? (
-                  <span style={styles.inStock}>✅ Stok: {product.stock}</span>
-                ) : (
-                  <span style={styles.outOfStock}>❌ Stok Habis</span>
-                )}
-              </div>
-            </div>
+            <ProductCard
+              key={product.id}
+              product={product}
+              onEdit={handleEditProduct}
+              onDelete={handleDeleteProduct}
+            />
           ))}
+        </div>
+      )}
+      {/* Modal Tambah/Edit Produk */}
+      <Modal
+        isOpen={modalOpen}
+        onClose={handleCloseModal}
+        title={editingProduct ? "✏️ Edit Produk" : "➕ Tambah Produk Baru"}
+      >
+        <ProductForm
+          product={editingProduct}
+          onSuccess={handleFormSuccess}
+          onCancel={handleCloseModal}
+        />
+      </Modal>
+      {/* Loading overlay saat submit */}
+      {isSubmitting && (
+        <div style={styles.submitOverlay}>
+          <div style={styles.spinnerSmall}></div>
+          <p>Memproses...</p>
         </div>
       )}
     </div>
@@ -122,6 +193,14 @@ const styles = {
     borderRadius: "50%",
     animation: "spin 1s linear infinite",
   },
+  spinnerSmall: {
+    width: "30px",
+    height: "30px",
+    border: "3px solid #f3f3f3",
+    borderTop: "3px solid #3498db",
+    borderRadius: "50%",
+    animation: "spin 1s linear infinite",
+  },
   errorContainer: {
     textAlign: "center",
     padding: "40px",
@@ -135,81 +214,87 @@ const styles = {
     cursor: "pointer",
     fontSize: "16px",
   },
-  searchInput: {
-    width: "70%",
-    padding: "12px",
+  headerSection: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: "20px",
-    border: "1px solid #ccc",
-    borderRadius: "8px",
-    fontSize: "16px",
   },
-  refreshButton: {
-    padding: "12px 20px",
+  totalProducts: {
+    color: "#888",
+    marginTop: "4px",
+  },
+  addButton: {
+    padding: "12px 24px",
     backgroundColor: "#28a745",
     color: "white",
     border: "none",
     borderRadius: "8px",
     cursor: "pointer",
     fontSize: "16px",
-    marginLeft: "10px",
+    fontWeight: "bold",
+    transition: "background 0.2s",
+  },
+  toolbar: {
+    display: "flex",
+    gap: "10px",
+    marginBottom: "20px",
+  },
+  searchInput: {
+    flex: 1,
+    padding: "12px",
+    border: "1px solid #ccc",
+    borderRadius: "8px",
+    fontSize: "16px",
+  },
+  refreshButton: {
+    padding: "12px 20px",
+    backgroundColor: "#6c757d",
+    color: "white",
+    border: "none",
+    borderRadius: "8px",
+    cursor: "pointer",
+    fontSize: "14px",
   },
   grid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
     gap: "20px",
-    marginTop: "20px",
   },
-  card: {
-    backgroundColor: "#f8f9fa",
-    padding: "20px",
-    borderRadius: "10px",
-    boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-    transition: "transform 0.2s",
-    cursor: "pointer",
-  },
-  price: {
-    fontSize: "20px",
-    fontWeight: "bold",
-    color: "#28a745",
-  },
-  category: {
-    fontSize: "14px",
-    color: "#666",
-    backgroundColor: "#e9ecef",
-    display: "inline-block",
-    padding: "4px 12px",
-    borderRadius: "20px",
-    marginTop: "10px",
-  },
-  stockBadge: {
-    marginTop: "10px",
-  },
-  inStock: {
-    color: "#28a745",
-    fontWeight: "bold",
-  },
-  outOfStock: {
-    color: "#dc3545",
-    fontWeight: "bold",
-  },
-  noResults: {
+  emptyState: {
     textAlign: "center",
-    padding: "40px",
+    padding: "60px 20px",
     color: "#888",
+  },
+  emptyIcon: {
+    fontSize: "48px",
+    marginBottom: "10px",
+  },
+  submitOverlay: {
+    position: "fixed",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.3)",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 2000,
+    color: "white",
   },
 };
 
-// Tambahkan keyframes animation
+// Keyframes animation
 const styleSheet = document.createElement("style");
 styleSheet.textContent = ` 
   @keyframes spin { 
     0% { transform: rotate(0deg); } 
     100% { transform: rotate(360deg); } 
   } 
-  .card:hover { 
-    transform: translateY(-5px); 
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15); 
-  } 
+  .add-btn:hover { background: #218838; } 
+  .refresh-btn:hover { background: #5a6268; } 
 `;
 document.head.appendChild(styleSheet);
 

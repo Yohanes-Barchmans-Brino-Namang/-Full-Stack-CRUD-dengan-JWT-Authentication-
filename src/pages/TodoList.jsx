@@ -1,187 +1,223 @@
 import { useState, useEffect, useCallback } from 'react';
 import api from '../api/axiosInstance';
+import Modal from '../components/Modal';
+import TodoForm from '../components/TodoForm';
+import TodoCard from '../components/TodoCard';
 
 function TodoList() {
   const [todos, setTodos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [title, setTitle] = useState('');
-  const [filter, setFilter] = useState('all'); // 'all', 'active', 'completed'[cite: 1]
+  
+  // Fitur Filter & Search
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all'); // 'all' | 'active' | 'completed'
 
-  // Fetch data dari API menggunakan useCallback[cite: 1]
+  // State Modal & Aksi
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingTodo, setEditingTodo] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Ambil Data (GET /api/v1/todos)
   const fetchTodos = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      
       const response = await api.get('/api/v1/todos');
-      console.log('Data todos:', response.data);
       setTodos(response.data);
     } catch (err) {
       console.error('Error fetching todos:', err);
-      setError(err.response?.data?.message || 'Gagal mengambil data todo');
-      setTodos([]);
+      setError(err.response?.data?.message || 'Gagal mengambil data tugas dari server');
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // Fetch data saat komponen mount[cite: 1]
   useEffect(() => {
     fetchTodos();
   }, [fetchTodos]);
 
-  // Tambah Todo Baru (POST)[cite: 1]
-  const handleAddTodo = async (e) => {
-    e.preventDefault();
-    if (!title.trim()) return;
+  // Tambah Todo Baru
+  const handleAddTodo = () => {
+    setEditingTodo(null);
+    setModalOpen(true);
+  };
 
+  // Edit Todo
+  const handleEditTodo = (todo) => {
+    setEditingTodo(todo);
+    setModalOpen(true);
+  };
+
+  // Toggle Status Selesai (PUT)
+  const handleToggleComplete = async (id, newCompletedStatus) => {
     try {
-      setLoading(true);
-      const response = await api.post('/api/v1/todos', { title, completed: false });
-      setTodos([...todos, response.data]);
-      setTitle('');
+      await api.put(`/api/v1/todos/${id}`, { completed: newCompletedStatus });
+      await fetchTodos();
     } catch (err) {
-      setError('Gagal menambah todo');
-    } finally {
-      setLoading(false);
+      console.error('Error updating status:', err);
+      alert('❌ Gagal memperbarui status tugas');
     }
   };
 
-  // Update Status Todo (PUT)[cite: 1]
-  const handleToggleComplete = async (id, currentStatus) => {
-    try {
-      setLoading(true);
-      const response = await api.put(`/api/v1/todos/${id}`, { completed: !currentStatus });
-      setTodos(todos.map(todo => todo.id === id ? response.data : todo));
-    } catch (err) {
-      setError('Gagal mengupdate status todo');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Hapus Todo (DELETE)[cite: 1]
+  // Hapus Todo (DELETE)
   const handleDeleteTodo = async (id) => {
-    if (!window.confirm('Hapus todo ini?')) return;
+    if (!window.confirm('Yakin ingin menghapus tugas ini?')) return;
     try {
-      setLoading(true);
+      setIsSubmitting(true);
       await api.delete(`/api/v1/todos/${id}`);
-      setTodos(todos.filter(todo => todo.id !== id));
+      alert('✅ Tugas berhasil dihapus!');
+      await fetchTodos();
     } catch (err) {
-      setError('Gagal menghapus todo');
+      console.error('Error deleting todo:', err);
+      alert('❌ Gagal menghapus tugas');
     } finally {
-      setLoading(false);
+      setIsSubmitting(false);
     }
   };
 
-  // Filter logic[cite: 1]
-  const filteredTodos = todos.filter(todo => {
-    if (filter === 'active') return !todo.completed;
-    if (filter === 'completed') return todo.completed;
-    return true;
+  const handleFormSuccess = async () => {
+    setModalOpen(false);
+    setEditingTodo(null);
+    await fetchTodos();
+  };
+
+  const handleCloseModal = () => {
+    if (isSubmitting) return;
+    setModalOpen(false);
+    setEditingTodo(null);
+  };
+
+  // Logika Filter & Search
+  const filteredTodos = todos.filter((todo) => {
+    const matchesSearch =
+      todo.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (todo.description && todo.description.toLowerCase().includes(searchTerm.toLowerCase()));
+
+    if (filterStatus === 'active') return matchesSearch && !todo.completed;
+    if (filterStatus === 'completed') return matchesSearch && todo.completed;
+    return matchesSearch; // 'all'
   });
 
-  // Conditional Rendering - Loading State[cite: 1]
+  // Conditional Rendering: Loading State
   if (loading && todos.length === 0) {
     return (
-      <div style={styles.loadingContainer}>
+      <div style={styles.centerContainer}>
         <div style={styles.spinner}></div>
-        <p>Loading todos...</p>
+        <p>Memuat daftar tugas...</p>
       </div>
     );
   }
 
-  // Conditional Rendering - Error State[cite: 1]
-  if (error) {
+  // Conditional Rendering: Error State
+  if (error && todos.length === 0) {
     return (
-      <div style={styles.errorContainer}>
-        <h2>⚠️ Error</h2>
+      <div style={styles.centerContainer}>
+        <h2>⚠️ Terjadi Kesalahan</h2>
         <p>{error}</p>
-        <button onClick={fetchTodos} style={styles.retryButton}>
-          🔄 Coba Lagi
-        </button>
+        <button onClick={fetchTodos} style={styles.retryButton}>🔄 Coba Lagi</button>
       </div>
     );
   }
 
-  // Conditional Rendering - Success State[cite: 1]
   return (
     <div style={styles.container}>
-      <h1>📝 Aplikasi Todo List</h1>
-      
-      <form onSubmit={handleAddTodo} style={styles.form}>
-        <input
-          type="text"
-          placeholder="✍️ Tambah tugas baru..."
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          style={styles.searchInput}
-        />
-        <button type="submit" style={styles.refreshButton}>Tambah</button>
-      </form>
-
-      <div style={{ marginBottom: '20px' }}>
-        <button onClick={() => setFilter('all')} style={filter === 'all' ? styles.activeFilterBtn : styles.filterBtn}>Semua</button>
-        <button onClick={() => setFilter('active')} style={filter === 'active' ? styles.activeFilterBtn : styles.filterBtn}>Aktif</button>
-        <button onClick={() => setFilter('completed')} style={filter === 'completed' ? styles.activeFilterBtn : styles.filterBtn}>Selesai</button>
+      {/* Header */}
+      <div style={styles.headerSection}>
+        <div>
+          <h1 style={styles.appTitle}>📝 Full-Stack Todo App</h1>
+          <p style={styles.totalText}>Total tugas: {todos.length}</p>
+        </div>
+        <button onClick={handleAddTodo} style={styles.addButton}>
+          ➕ Tambah Tugas
+        </button>
       </div>
 
-      {loading && <p style={{ color: '#3498db' }}>Memproses data...</p>}
+      {/* Toolbar: Search & Filter */}
+      <div style={styles.toolbar}>
+        <input
+          type="text"
+          placeholder="🔍 Cari tugas..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          style={styles.searchInput}
+        />
+        <div style={styles.filterButtons}>
+          <button
+            onClick={() => setFilterStatus('all')}
+            style={{ ...styles.filterBtn, backgroundColor: filterStatus === 'all' ? '#007bff' : '#e0e0e0', color: filterStatus === 'all' ? 'white' : '#333' }}
+          >
+            Semua
+          </button>
+          <button
+            onClick={() => setFilterStatus('active')}
+            style={{ ...styles.filterBtn, backgroundColor: filterStatus === 'active' ? '#ffc107' : '#e0e0e0', color: filterStatus === 'active' ? '#333' : '#333' }}
+          >
+            Aktif
+          </button>
+          <button
+            onClick={() => setFilterStatus('completed')}
+            style={{ ...styles.filterBtn, backgroundColor: filterStatus === 'completed' ? '#28a745' : '#e0e0e0', color: filterStatus === 'completed' ? 'white' : '#333' }}
+          >
+            Selesai
+          </button>
+        </div>
+        <button onClick={fetchTodos} style={styles.refreshButton}>🔄 Refresh</button>
+      </div>
 
+      {/* Grid / Empty State */}
       {filteredTodos.length === 0 ? (
-        <p style={styles.noResults}>Tidak ada todo yang cocok.</p>
+        <div style={styles.emptyState}>
+          <p style={styles.emptyIcon}>📭</p>
+          <p>Tidak ada data tugas yang ditemukan.</p>
+        </div>
       ) : (
         <div style={styles.grid}>
           {filteredTodos.map((todo) => (
-            <div key={todo.id} style={styles.card}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <input 
-                  type="checkbox" 
-                  checked={todo.completed} 
-                  onChange={() => handleToggleComplete(todo.id, todo.completed)}
-                  style={{ transform: 'scale(1.5)' }}
-                />
-                <h3 style={{ textDecoration: todo.completed ? 'line-through' : 'none', color: todo.completed ? '#888' : '#000' }}>
-                  {todo.title}
-                </h3>
-              </div>
-              <button onClick={() => handleDeleteTodo(todo.id)} style={styles.deleteBtn}>Hapus</button>
-            </div>
+            <TodoCard
+              key={todo.id}
+              todo={todo}
+              onToggleComplete={handleToggleComplete}
+              onEdit={handleEditTodo}
+              onDelete={handleDeleteTodo}
+            />
           ))}
         </div>
       )}
+
+      {/* Modal Form Tambah/Edit */}
+      <Modal
+        isOpen={modalOpen}
+        onClose={handleCloseModal}
+        title={editingTodo ? '✏️ Edit Tugas' : '➕ Tambah Tugas Baru'}
+      >
+        <TodoForm
+          todo={editingTodo}
+          onSuccess={handleFormSuccess}
+          onCancel={handleCloseModal}
+        />
+      </Modal>
     </div>
   );
 }
 
-// CSS Styles disesuaikan dari contoh modul[cite: 1]
 const styles = {
-  container: { maxWidth: '800px', margin: '0 auto', padding: '20px', fontFamily: 'Arial, sans-serif' },
-  loadingContainer: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh' },
+  container: { maxWidth: '1000px', margin: '0 auto', padding: '20px', fontFamily: 'Arial, sans-serif' },
+  centerContainer: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh' },
   spinner: { width: '40px', height: '40px', border: '4px solid #f3f3f3', borderTop: '4px solid #3498db', borderRadius: '50%', animation: 'spin 1s linear infinite' },
-  errorContainer: { textAlign: 'center', padding: '40px' },
-  retryButton: { padding: '10px 20px', backgroundColor: '#007bff', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '16px' },
-  form: { display: 'flex', gap: '10px', marginBottom: '20px' },
-  searchInput: { flex: 1, padding: '12px', border: '1px solid #ccc', borderRadius: '8px', fontSize: '16px' },
-  refreshButton: { padding: '12px 20px', backgroundColor: '#28a745', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '16px' },
-  filterBtn: { padding: '8px 15px', marginRight: '10px', borderRadius: '5px', border: '1px solid #ccc', cursor: 'pointer', backgroundColor: '#f8f9fa' },
-  activeFilterBtn: { padding: '8px 15px', marginRight: '10px', borderRadius: '5px', border: 'none', cursor: 'pointer', backgroundColor: '#007bff', color: 'white' },
-  grid: { display: 'flex', flexDirection: 'column', gap: '15px', marginTop: '20px' },
-  card: { backgroundColor: '#f8f9fa', padding: '20px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', transition: 'transform 0.2s', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  deleteBtn: { padding: '8px 15px', backgroundColor: '#dc3545', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' },
-  noResults: { textAlign: 'center', padding: '40px', color: '#888' },
+  retryButton: { padding: '10px 20px', backgroundColor: '#007bff', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' },
+  headerSection: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
+  appTitle: { margin: 0, fontSize: '24px', color: '#333' },
+  totalText: { color: '#666', margin: '4px 0 0 0' },
+  addButton: { padding: '10px 20px', backgroundColor: '#28a745', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' },
+  toolbar: { display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' },
+  searchInput: { flex: 1, minWidth: '200px', padding: '10px', borderRadius: '8px', border: '1px solid #ccc', fontSize: '14px' },
+  filterButtons: { display: 'flex', gap: '5px' },
+  filterBtn: { padding: '8px 14px', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px' },
+  refreshButton: { padding: '10px 16px', backgroundColor: '#6c757d', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' },
+  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' },
+  emptyState: { textAlign: 'center', padding: '50px', color: '#888' },
+  emptyIcon: { fontSize: '40px', marginBottom: '10px' },
 };
-
-// Tambahkan keyframes animation[cite: 1]
-const styleSheet = document.createElement('style');
-styleSheet.textContent = `
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-  .card:hover { transform: translateY(-3px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
-`;
-document.head.appendChild(styleSheet);
 
 export default TodoList;
