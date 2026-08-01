@@ -18,7 +18,7 @@ function ProductList() {
     try {
       setLoading(true);
       setError(null);
-      const response = await api.get("/api/v1/products");
+      const response = await api.get("products");
       setProducts(response.data);
     } catch (err) {
       console.error("Error fetching products:", err);

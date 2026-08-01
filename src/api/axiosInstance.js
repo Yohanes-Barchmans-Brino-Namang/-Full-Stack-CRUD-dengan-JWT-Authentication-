@@ -1,43 +1,40 @@
-import axios from 'axios';
-import { API_URL } from '../config';
-
+import axios from "axios";
+import { API_URL } from "../config";
 const api = axios.create({
-  baseURL: API_URL,
+  baseURL: "http://localhost:3000/api/v1",
   timeout: 10000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  headers: { "Content-Type": "application/json" },
 });
-
-// Request Interceptor - Logging setiap request
+// Request Interceptor - Tambahkan token otomatis
 api.interceptors.request.use(
   (config) => {
-    console.log(`📤 Request: ${config.method?.toUpperCase()} ${config.url}`);
-    console.log('📦 Data:', config.data || 'No body');
+    const token = localStorage.getItem("accessToken");
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    console.log(`📤 ${config.method?.toUpperCase()} ${config.url}`);
     return config;
   },
   (error) => {
-    console.error('❌ Request Error:', error);
+    console.error("❌ Request Error:", error);
     return Promise.reject(error);
-  }
+  },
 );
-
-// Response Interceptor - Logging setiap response[cite: 1]
+// Response Interceptor - Handle 401 (token expired)
 api.interceptors.response.use(
   (response) => {
-    console.log(`📥 Response: ${response.status} ${response.config.url}`);
+    console.log(`📥 ${response.status} ${response.config.url}`);
     return response;
   },
   (error) => {
-    if (error.response) {
-      console.error(`❌ Server Error: ${error.response.status}`, error.response.data);
-    } else if (error.request) {
-      console.error('❌ No Response from Server:', error.request);
-    } else {
-      console.error('❌ Request Setup Error:', error.message);
+    if (error.response?.status === 401) {
+      console.error("❌ Unauthorized! Token expired or invalid.");
+      // Redirect ke login
+      localStorage.removeItem("accessToken");
+      window.location.href = "/login";
     }
+    console.error("❌ Error:", error.response?.data || error.message);
     return Promise.reject(error);
-  }
+  },
 );
-
 export default api;

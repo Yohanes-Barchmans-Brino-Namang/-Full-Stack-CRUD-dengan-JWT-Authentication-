@@ -49,11 +49,11 @@ function ProductForm({ product, onSuccess, onCancel }) {
       setError(null);
       if (isEdit) {
         // PUT Request - Update produk
-        await api.put(`/api/v1/products/${product.id}`, formData);
+        await api.put(`/products/${product.id}`, formData);
         alert("✅ Produk berhasil diupdate!");
       } else {
         // POST Request - Tambah produk
-        await api.post("/api/v1/products", formData);
+        await api.post("/products", formData);
         alert("✅ Produk berhasil ditambahkan!");
       }
       onSuccess(); // Refetch data
